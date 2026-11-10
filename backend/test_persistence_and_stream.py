@@ -47,7 +47,14 @@ from backend.persist import (
 from backend.engine import (
     process_invoice_file,
     reset_engine_state,
+    get_run,
+    get_all_runs,
+    save_run,
+    _RUNS_CACHE,
+    RUNS_JSON,
 )
+from backend.ocr import read_document
+from backend.auth import authenticate_user, create_session, get_session_user
 
 
 class TestPersistenceAndStream(unittest.TestCase):
@@ -303,6 +310,169 @@ class TestPersistenceAndStream(unittest.TestCase):
         self.assertIn("count", today_trend)
         self.assertIn("approved", today_trend)
         self.assertIn("flagged", today_trend)
+
+    # -----------------------------------------------------------------------
+    # 5. Robustness & Security Production Tests
+    # -----------------------------------------------------------------------
+    def test_uploaded_files_and_runs_survive_restart(self):
+        """Simulates container restart: uploads and runs persist into MongoDB and restore cleanly."""
+        import mongomock
+
+        client_mock = mongomock.MongoClient()
+        mock_coll = client_mock["zamp_ap"]["kv_files"]
+        set_custom_mongo_collection(mock_coll)
+
+        start_persistence(mongo_uri="mongodb+srv://mock.mongodb.net")
+
+        # 1. Simulate uploaded invoice file in data/uploads
+        uploads_dir = DATA_DIR / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        test_upload = uploads_dir / "invoice_restart_sim_test.pdf"
+        test_upload.write_bytes(b"%PDF-1.4 Mock Upload Invoice Content For Restart Survival Test")
+
+        # 2. Process an invoice run to populate _RUNS_CACHE and runs.json
+        run = process_invoice_file("backend/data/sample_invoices/01_happy_shree_ganesh_inr.pdf")
+        saved_run_id = run.run_id
+
+        # Flush state to MongoDB
+        flush_to_mongo(mock_coll)
+        stop_persistence()
+
+        # 3. Simulate container wipe/restart: clear memory cache and delete disk files
+        _RUNS_CACHE.clear()
+        if test_upload.exists():
+            test_upload.unlink()
+        if RUNS_JSON.exists():
+            RUNS_JSON.unlink()
+
+        self.assertFalse(test_upload.exists())
+        self.assertNotIn(saved_run_id, _RUNS_CACHE)
+
+        # 4. Restart container with MongoDB Atlas persistence
+        set_custom_mongo_collection(mock_coll)
+        start_persistence(mongo_uri="mongodb+srv://mock.mongodb.net")
+
+        # 5. Verify upload was restored to disk
+        self.assertTrue(test_upload.exists())
+        self.assertEqual(test_upload.read_bytes(), b"%PDF-1.4 Mock Upload Invoice Content For Restart Survival Test")
+
+        # 6. Verify run survives and is queryable
+        restored_run = get_run(saved_run_id)
+        self.assertIsNotNone(restored_run)
+        self.assertEqual(restored_run.decision, "AUTO_APPROVE")
+
+        # Clean up
+        if test_upload.exists():
+            test_upload.unlink()
+        stop_persistence()
+
+    def test_absent_and_invalid_mongodb_uri(self):
+        """Confirms persist.py defaults to local when URI is absent or malformed/invalid."""
+        # Absent (None)
+        start_persistence(mongo_uri=None, pg_url=None)
+        self.assertEqual(get_persistence_mode(), "local")
+        self.assertEqual(get_persistence_backend(), "local")
+        stop_persistence()
+
+        # Absent (empty string)
+        start_persistence(mongo_uri="", pg_url="")
+        self.assertEqual(get_persistence_mode(), "local")
+        self.assertEqual(get_persistence_backend(), "local")
+        stop_persistence()
+
+        # Invalid scheme
+        start_persistence(mongo_uri="not_a_valid_mongo_uri")
+        self.assertEqual(get_persistence_mode(), "local")
+        self.assertEqual(get_persistence_backend(), "local")
+        stop_persistence()
+
+        # Malformed host with short timeout
+        start_persistence(mongo_uri="mongodb://localhost:59999/?connectTimeoutMS=500")
+        self.assertEqual(get_persistence_mode(), "local")
+        self.assertEqual(get_persistence_backend(), "local")
+        stop_persistence()
+
+    def test_security_path_traversal_rejection(self):
+        """Directly tests path-traversal rejection and sanitisation on file endpoints."""
+        from backend.main import _find_file_on_disk, serve_raw_file, serve_preview_image
+        from fastapi import HTTPException
+
+        client = TestClient(app)
+
+        # 1. Direct function path traversal checks
+        traversal_payloads = [
+            "../../etc/passwd",
+            "..\\..\\windows\\win.ini",
+            "../main.py",
+            "subdir/../../secret.txt",
+        ]
+        for payload in traversal_payloads:
+            self.assertIsNone(_find_file_on_disk(payload))
+            with self.assertRaises(HTTPException) as ctx:
+                serve_raw_file(payload)
+            self.assertEqual(ctx.exception.status_code, 400)
+
+            with self.assertRaises(HTTPException) as ctx_img:
+                serve_preview_image(payload)
+            self.assertEqual(ctx_img.exception.status_code, 400)
+
+        # 2. HTTP client requests with path traversal sequences
+        res_bs = client.get("/api/files/..\\test.txt")
+        self.assertEqual(res_bs.status_code, 400)
+
+        # 3. Valid sample file download
+        res_ok = client.get("/api/files/01_happy_shree_ganesh_inr.pdf")
+        self.assertEqual(res_ok.status_code, 200)
+
+        # 4. Non-existent file returns 404
+        res_404 = client.get("/api/files/nonexistent_document_123.pdf")
+        self.assertEqual(res_404.status_code, 404)
+
+    def test_security_upload_limits(self):
+        """Verifies upload file count (max 10) and size limit (15MB) with 400/413."""
+        client = TestClient(app)
+
+        # 1. More than 10 files should return 400
+        eleven_files = [("files", (f"file_{i}.pdf", b"%PDF-1.4 mock", "application/pdf")) for i in range(11)]
+        res_count = client.post("/api/runs/upload", files=eleven_files)
+        self.assertEqual(res_count.status_code, 400)
+        self.assertIn("Too many files", res_count.json().get("detail", ""))
+
+        # 2. File exceeding 15MB should return 413
+        oversized_data = b"X" * (16 * 1024 * 1024)
+        one_huge_file = [("files", ("huge_invoice.pdf", oversized_data, "application/pdf"))]
+        res_size = client.post("/api/runs/upload", files=one_huge_file)
+        self.assertEqual(res_size.status_code, 413)
+        self.assertIn("exceeds maximum allowed size", res_size.json().get("detail", ""))
+
+    def test_auth_salt_and_session_expiration(self):
+        """Tests that admin_1 always logs in, custom salt works, and sessions expire."""
+        # 1. Default admin_1 login works
+        admin = authenticate_user("admin_1", "pass@admin")
+        self.assertIsNotNone(admin)
+        self.assertEqual(admin["username"], "admin_1")
+
+        # 2. Session creation and expiration
+        token = create_session(admin, ttl_seconds=1)
+        self.assertIsNotNone(get_session_user(token))
+        time.sleep(1.2)
+        # After TTL, session must expire and return None
+        self.assertIsNone(get_session_user(token))
+
+    def test_ocr_disabled_flag_and_memory_safety(self):
+        """Verifies ENABLE_LOCAL_OCR=false falls back gracefully to low-confidence review."""
+        old_val = os.environ.get("ENABLE_LOCAL_OCR")
+        try:
+            os.environ["ENABLE_LOCAL_OCR"] = "false"
+            text, method, conf, meta = read_document("backend/data/sample_invoices/06_scanned_muller_no_po_eur.png")
+            self.assertEqual(method, "ocr")
+            self.assertLessEqual(conf, 0.50)
+            self.assertTrue(meta.get("review_required"))
+        finally:
+            if old_val is not None:
+                os.environ["ENABLE_LOCAL_OCR"] = old_val
+            else:
+                os.environ.pop("ENABLE_LOCAL_OCR", None)
 
 
 if __name__ == "__main__":

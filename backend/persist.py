@@ -79,6 +79,12 @@ def get_tracked_files() -> List[Path]:
     return tracked
 
 
+def _sanitize_secret(text: str) -> str:
+    """Masks credentials in URIs or strings from logs to prevent leaking secrets."""
+    import re
+    return re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", str(text))
+
+
 # ===========================================================================
 # MongoDB Atlas Implementation (Primary)
 # ===========================================================================
@@ -93,6 +99,7 @@ def _get_mongo_collection(uri: Optional[str] = None):
     if not mongo_uri:
         return None
 
+    client = None
     try:
         from pymongo import MongoClient
         db_name = os.getenv("MONGODB_DB", "zamp_ap").strip() or "zamp_ap"
@@ -105,11 +112,13 @@ def _get_mongo_collection(uri: Optional[str] = None):
         client.admin.command("ping")
         return client[db_name]["kv_files"]
     except Exception as e:
-        logger.warning(f"MongoDB connection failed: {e}")
-        try:
-            client.close()
-        except Exception:
-            pass
+        safe_err = _sanitize_secret(str(e))
+        logger.warning(f"MongoDB connection failed: {safe_err}")
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
         return None
 
 
@@ -472,7 +481,8 @@ def start_persistence(mongo_uri: Optional[str] = None, pg_url: Optional[str] = N
                 logger.info("MongoDB Atlas persistence successfully initialized.")
                 return
         except Exception as e:
-            logger.warning(f"Failed to start MongoDB persistence (attempting secondary fallback): {e}")
+            safe_err = _sanitize_secret(str(e))
+            logger.warning(f"Failed to start MongoDB persistence (attempting secondary fallback): {safe_err}")
 
     # Priority 2: PostgreSQL
     p_url = pg_url or os.getenv("DATABASE_URL", "").strip()
@@ -505,7 +515,8 @@ def start_persistence(mongo_uri: Optional[str] = None, pg_url: Optional[str] = N
                 logger.info("PostgreSQL database persistence successfully initialized.")
                 return
         except Exception as e:
-            logger.warning(f"Failed to start PostgreSQL persistence: {e}")
+            safe_err = _sanitize_secret(str(e))
+            logger.warning(f"Failed to start PostgreSQL persistence: {safe_err}")
 
     # Priority 3: Local fallback
     _ACTIVE_BACKEND = "local"

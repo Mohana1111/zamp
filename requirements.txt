@@ -8,11 +8,8 @@ python-docx>=0.8.11
 python-multipart>=0.0.6
 httpx>=0.24.0
 requests>=2.31.0
-rapidocr-onnxruntime>=1.2.0
 google-genai>=0.1.0
 psycopg2-binary>=2.9.0
 pymongo>=4.5.0
 dnspython>=2.4.0
-
-
-
+mongomock>=4.1.0

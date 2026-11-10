@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+frontend/node_modules
+frontend/dist
+backend/data/uploads/*
+!backend/data/uploads/.gitkeep
+backend/data/downloads/*
+backend/__pycache__
+backend/**/__pycache__
+.pytest_cache
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+*.log

@@ -4,23 +4,23 @@ services:
     env: docker
     plan: free
     dockerfilePath: Dockerfile
+    healthCheckPath: /api/health
     envVars:
-      - key: GROQ_API_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: DATABASE_URL
-        sync: false
+      - key: PORT
+        value: 10000
+      - key: ENABLE_LOCAL_OCR
+        value: "false"
       - key: MONGODB_URI
         sync: false
       - key: MONGODB_DB
-        value: zamp_ap
-
-
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
       - key: AGENT_BOT_EMAIL
-        value: zamp.ap.agent@gmail.com
+        sync: false
       - key: AGENT_BOT_APP_PASSWORD
         sync: false
-      - key: PORT
-        value: 10000
-
+      - key: CORS_ORIGINS
+        value: "*"

@@ -1,0 +1,4 @@
+# Optional local OCR dependencies (for offline/on-prem environments with >1GB RAM)
+# Not required in production on Render free tier (which uses ENABLE_LOCAL_OCR=false and Gemini Vision)
+rapidocr-onnxruntime>=1.2.0
+opencv-python-headless>=4.8.0

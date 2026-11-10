@@ -308,7 +308,8 @@ def _generate_email_record_pdf(
         if y > 750:
             page = doc.new_page()
             y = 50
-        page.insert_text((45, y), line[:115], fontsize=9)
+        if line and line.strip():
+            page.insert_text((45, y), line[:115], fontsize=9)
         y += 13
 
     doc.save(str(pdf_path))
@@ -1590,8 +1591,8 @@ def poll_and_process_bot_inbox() -> List[Dict[str, Any]]:
     and immediately passes invoices and quotations to the processing engine.
     """
     global _GMAIL_MESSAGES_STATE
-    bot_email = AGENT_EMAIL_CONFIG.get("bot_base_email") or os.getenv("AGENT_BOT_EMAIL", "ap.agent.invoice@gmail.com")
-    bot_pwd = AGENT_EMAIL_CONFIG.get("bot_app_password") or os.getenv("AGENT_BOT_APP_PASSWORD", "umdoinhxtgoqletx")
+    bot_email = (AGENT_EMAIL_CONFIG.get("bot_base_email") or os.getenv("AGENT_BOT_EMAIL", "")).strip()
+    bot_pwd = (AGENT_EMAIL_CONFIG.get("bot_app_password") or os.getenv("AGENT_BOT_APP_PASSWORD", "")).strip()
     clean_pwd = bot_pwd.replace(" ", "").strip() if bot_pwd else ""
 
     if not clean_pwd or not bot_email:
@@ -1637,11 +1638,11 @@ def poll_and_process_bot_inbox() -> List[Dict[str, Any]]:
             try:
                 res = send_email_to_agent(mid)
                 new_results.append(res)
-            except Exception as e:
-                print(f"[IMAP Poller Ingestion Error for {mid}] {e}")
+            except Exception:
+                pass
 
         _save_processed_imap_ids(processed_ids)
-    except Exception as e:
-        print(f"[IMAP Poller Error] {e}")
+    except Exception:
+        pass
 
     return new_results

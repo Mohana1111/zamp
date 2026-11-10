@@ -17,12 +17,13 @@ import base64
 import zipfile
 import io
 import os
+import re
 import time
 import asyncio
 
 from pathlib import Path
 from datetime import datetime, date
-from typing import List, Optional, Literal, Dict, Any
+from typing import List, Optional, Literal, Dict, Any, Tuple
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Response, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -127,10 +128,16 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for Frontend
+# Enable CORS for Frontend (configurable via CORS_ORIGINS, default same-origin / *)
+cors_env = os.getenv("CORS_ORIGINS", "*").strip()
+if not cors_env or cors_env == "*":
+    cors_origins = ["*"]
+else:
+    cors_origins = [o.strip() for o in cors_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -138,6 +145,61 @@ app.add_middleware(
 
 UPLOADS_DIR = DATA_DIR / "uploads"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+
+# Upload limits & sanitization
+MAX_UPLOAD_FILES = 10
+MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15 MB
+
+
+def _sanitize_filename(filename: Optional[str]) -> str:
+    """Sanitizes filename and strips path traversal sequences."""
+    if not filename:
+        return f"file_{uuid.uuid4().hex[:8]}"
+    base = Path(filename).name
+    safe = re.sub(r"[^a-zA-Z0-9_.-]", "_", base).strip("._")
+    if not safe:
+        safe = f"file_{uuid.uuid4().hex[:8]}"
+    return safe
+
+
+async def _save_upload_file(file: UploadFile, dest_path: Path, max_bytes: int = MAX_FILE_SIZE_BYTES) -> int:
+    """
+    Streams uploaded file to dest_path safely.
+    Raises 413 if file exceeds max_bytes, cleaning up partial file.
+    """
+    resolved_dest = dest_path.resolve()
+    resolved_uploads = UPLOADS_DIR.resolve()
+    if not str(resolved_dest).startswith(str(resolved_uploads)):
+        raise HTTPException(status_code=400, detail="Invalid filename or path traversal detected")
+
+    size = 0
+    try:
+        with open(dest_path, "wb") as buffer:
+            while chunk := await file.read(65536):
+                size += len(chunk)
+                if size > max_bytes:
+                    break
+                buffer.write(chunk)
+    except Exception as e:
+        if dest_path.exists():
+            try:
+                dest_path.unlink()
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Error saving upload: {e}")
+
+    if size > max_bytes:
+        if dest_path.exists():
+            try:
+                dest_path.unlink()
+            except Exception:
+                pass
+        raise HTTPException(
+            status_code=413,
+            detail=f"File '{file.filename}' exceeds maximum allowed size of 15MB."
+        )
+
+    return size
 
 # ---------------------------------------------------------------------------
 # Sample Scenarios Catalog
@@ -161,15 +223,20 @@ SCENARIOS_CATALOG = _load_scenarios_catalog()
 # Startup Event & Autonomous Background Bot Poller
 # ---------------------------------------------------------------------------
 async def _bot_poller_background_loop():
-    """Continuous autonomous background worker that polls the central agent bot Gmail inbox every 10s."""
+    """Continuous autonomous background worker that polls the central agent bot Gmail inbox with backoff."""
+    backoff = 10
     while True:
         try:
-            bot_pwd = AGENT_EMAIL_CONFIG.get("bot_app_password") or os.getenv("AGENT_BOT_APP_PASSWORD", "")
-            if bot_pwd and bot_pwd.strip():
+            bot_pwd = (AGENT_EMAIL_CONFIG.get("bot_app_password") or os.getenv("AGENT_BOT_APP_PASSWORD", "")).strip()
+            bot_email = (AGENT_EMAIL_CONFIG.get("bot_base_email") or os.getenv("AGENT_BOT_EMAIL", "")).strip()
+            if bot_pwd and bot_email:
                 await asyncio.to_thread(poll_and_process_bot_inbox)
+                backoff = 10
+            else:
+                backoff = 30
         except Exception:
-            pass
-        await asyncio.sleep(10)
+            backoff = min(backoff * 2, 120)
+        await asyncio.sleep(backoff)
 
 
 @app.on_event("startup")
@@ -541,9 +608,9 @@ async def upload_quotation_endpoint(file: UploadFile = File(...)):
     Validity Period, Item Lines, Subtotal, Tax Amount, and Grand Total via AI.
     Saves to persistent quotations.json store.
     """
-    save_path = UPLOADS_DIR / f"quotation_{uuid.uuid4().hex[:6]}_{file.filename}"
-    with open(save_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    safe_name = _sanitize_filename(file.filename)
+    save_path = UPLOADS_DIR / f"quotation_{uuid.uuid4().hex[:6]}_{safe_name}"
+    await _save_upload_file(file, save_path)
 
     std_inv = extract_standard_invoice(str(save_path), source_type="UPLOAD")
     q_num = str(std_inv.invoice_number.value or std_inv.po_reference.value or Path(file.filename).stem).strip()
@@ -993,17 +1060,22 @@ async def upload_invoices(
     Accepts invoice files and optional Expected Invoice / Quotation file (or quotation_id),
     runs extraction, and returns the results with side-by-side quotation comparison.
     """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided for upload.")
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(status_code=400, detail=f"Too many files uploaded ({len(files)}). Maximum allowed is {MAX_UPLOAD_FILES} files.")
+
     results: List[InvoiceRunResult] = []
     quotation_path = None
     if quotation_file and quotation_file.filename:
-        quotation_path = UPLOADS_DIR / f"quotation_{quotation_file.filename}"
-        with open(quotation_path, "wb") as buffer:
-            shutil.copyfileobj(quotation_file.file, buffer)
+        q_safe = _sanitize_filename(quotation_file.filename)
+        quotation_path = UPLOADS_DIR / f"quotation_{uuid.uuid4().hex[:6]}_{q_safe}"
+        await _save_upload_file(quotation_file, quotation_path)
 
     for file in files:
-        file_path = UPLOADS_DIR / file.filename
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        f_safe = _sanitize_filename(file.filename)
+        file_path = UPLOADS_DIR / f_safe
+        await _save_upload_file(file, file_path)
 
         run = process_invoice_file(
             filepath=str(file_path),
@@ -1027,22 +1099,26 @@ async def upload_invoices_stream(
     """
     Accepts invoice files and streams real-time stage progress and results via Server-Sent Events (SSE).
     """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided for upload.")
+    if len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(status_code=400, detail=f"Too many files uploaded ({len(files)}). Maximum allowed is {MAX_UPLOAD_FILES} files.")
+
     import queue
     import threading
 
     saved_files: List[Tuple[str, str]] = []
     for file in files:
-        f_name = file.filename or f"invoice_{uuid.uuid4().hex[:6]}.pdf"
-        file_path = UPLOADS_DIR / f_name
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-        saved_files.append((f_name, str(file_path)))
+        f_safe = _sanitize_filename(file.filename)
+        file_path = UPLOADS_DIR / f_safe
+        await _save_upload_file(file, file_path)
+        saved_files.append((f_safe, str(file_path)))
 
     saved_quotation_path = None
     if quotation_file and quotation_file.filename:
-        q_path = UPLOADS_DIR / f"quotation_{quotation_file.filename}"
-        with open(q_path, "wb") as buffer:
-            shutil.copyfileobj(quotation_file.file, buffer)
+        q_safe = _sanitize_filename(quotation_file.filename)
+        q_path = UPLOADS_DIR / f"quotation_{uuid.uuid4().hex[:6]}_{q_safe}"
+        await _save_upload_file(quotation_file, q_path)
         saved_quotation_path = str(q_path)
 
     event_queue: queue.Queue = queue.Queue()
@@ -1126,9 +1202,10 @@ async def attach_quotation_endpoint(run_id: str, file: UploadFile = File(...)):
     Uploads and attaches an Expected Invoice or Quotation document to an existing run,
     running dual AI extraction and updating quotation matching and human approval status.
     """
-    file_path = UPLOADS_DIR / f"quotation_{run_id}_{file.filename}"
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    safe_name = _sanitize_filename(file.filename)
+    safe_run_id = _sanitize_filename(run_id)
+    file_path = UPLOADS_DIR / f"quotation_{safe_run_id}_{safe_name}"
+    await _save_upload_file(file, file_path)
 
     updated_run = attach_quotation_to_run(run_id, str(file_path))
     if not updated_run:
@@ -1387,14 +1464,18 @@ async def receive_inbound_email(
     att_name = None
     att_bytes = None
     if attachment and attachment.filename:
-        att_name = attachment.filename
+        att_name = _sanitize_filename(attachment.filename)
         att_bytes = await attachment.read()
+        if len(att_bytes) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail=f"Attachment '{attachment.filename}' exceeds maximum allowed size of 15MB.")
 
     q_name = None
     q_bytes = None
     if quotation_attachment and quotation_attachment.filename:
-        q_name = quotation_attachment.filename
+        q_name = _sanitize_filename(quotation_attachment.filename)
         q_bytes = await quotation_attachment.read()
+        if len(q_bytes) > MAX_FILE_SIZE_BYTES:
+            raise HTTPException(status_code=413, detail=f"Quotation attachment '{quotation_attachment.filename}' exceeds maximum allowed size of 15MB.")
 
     msg = add_inbound_email(
         from_sender=from_sender,
@@ -1703,21 +1784,41 @@ def pull_all_invoices(req: Optional[PullAllRequest] = None):
 # Endpoints: File Downloads & Visual Document Previews
 # ---------------------------------------------------------------------------
 def _find_file_on_disk(filename: str) -> Optional[Path]:
-    """Finds file in sample invoices, uploads, or downloads directory."""
+    """Finds file in sample invoices, uploads, or downloads directory with path-traversal safety."""
+    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+        return None
+
+    clean_name = Path(filename).name
+    if not clean_name or clean_name in (".", ".."):
+        return None
+
+    allowed_dirs = [
+        SAMPLE_INVOICES_DIR.resolve(),
+        UPLOADS_DIR.resolve(),
+        (DATA_DIR / "downloads").resolve(),
+    ]
+
     candidates = [
-        SAMPLE_INVOICES_DIR / filename,
-        UPLOADS_DIR / filename,
-        DATA_DIR / "downloads" / filename,
+        SAMPLE_INVOICES_DIR / clean_name,
+        UPLOADS_DIR / clean_name,
+        DATA_DIR / "downloads" / clean_name,
     ]
     for p in candidates:
-        if p.exists():
-            return p
+        try:
+            resolved = p.resolve()
+            if resolved.exists() and any(str(resolved).startswith(str(d)) for d in allowed_dirs):
+                return resolved
+        except Exception:
+            pass
 
-    stem = Path(filename).stem
+    stem = Path(clean_name).stem
     for alt_ext in [".pdf", ".png", ".xlsx", ".docx", ".jpg"]:
-        alt_p = SAMPLE_INVOICES_DIR / f"{stem}{alt_ext}"
-        if alt_p.exists():
-            return alt_p
+        try:
+            alt_p = (SAMPLE_INVOICES_DIR / f"{stem}{alt_ext}").resolve()
+            if alt_p.exists() and str(alt_p).startswith(str(SAMPLE_INVOICES_DIR.resolve())):
+                return alt_p
+        except Exception:
+            pass
 
     return None
 
@@ -1725,10 +1826,13 @@ def _find_file_on_disk(filename: str) -> Optional[Path]:
 @app.get("/api/files/{filename}")
 def serve_raw_file(filename: str):
     """Serves the raw original invoice document (PDF/PNG/XLSX/DOCX)."""
+    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename or path traversal detected")
+
     p = _find_file_on_disk(filename)
     if not p or not p.exists():
         raise HTTPException(status_code=404, detail=f"File {filename} not found")
-    return FileResponse(path=str(p), filename=filename)
+    return FileResponse(path=str(p), filename=Path(filename).name)
 
 
 @app.get("/api/files/{filename}/preview-image")
@@ -1737,9 +1841,12 @@ def serve_preview_image(filename: str):
     Renders page 1 of a PDF (or formats XLSX/DOCX/Images) as a crisp PNG
     so the Frontend can display a visual preview side-by-side with the Standardized Template.
     """
+    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename or path traversal detected")
+
     p = _find_file_on_disk(filename)
-    if not p:
-        p = SAMPLE_INVOICES_DIR / filename
+    if not p or not p.exists():
+        raise HTTPException(status_code=404, detail=f"File {filename} not found")
     png_bytes = render_file_preview_png(str(p))
     return Response(content=png_bytes, media_type="image/png")
 

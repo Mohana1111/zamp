@@ -2,7 +2,7 @@
   {
     "id": "usr_admin_1",
     "username": "admin_1",
-    "password_hash": "e7b77cf492b67a18526d1ae3b9bd8256cc9bb1529684a06afa16f775778bb3ae",
+    "password_hash": "2eb6554988b994ce8c4ba1febaee66b5cdb4a347e50662f5ebaa3d6f027acb17",
     "name": "Administrator",
     "role": "admin",
     "email": "admin@clearpay.internal",

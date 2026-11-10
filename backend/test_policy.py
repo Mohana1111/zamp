@@ -29,6 +29,7 @@ Tests:
 6. REST API Endpoints Contract Verification
 """
 
+import os
 import sys
 import unittest
 from unittest.mock import patch
@@ -215,13 +216,25 @@ class TestAPBackend(unittest.TestCase):
     # 3. Scanned Image Local OCR Test
     # -----------------------------------------------------------------------
     def test_scanned_png_rapidocr_no_key(self):
-        """Scanned PNG sample is extracted via RapidOCR without LLM key."""
-        text, method, conf, meta = read_document("backend/data/sample_invoices/06_scanned_muller_no_po_eur.png")
-        self.assertEqual(method, "ocr")
-        self.assertGreater(len(text), 100)
-        self.assertGreaterEqual(conf, 0.70)
-        self.assertIn("RE-2026-0412", text)
-        self.assertIn("DE123456789", text)
+        """Scanned PNG sample is extracted via RapidOCR when enabled and installed."""
+        try:
+            import rapidocr_onnxruntime
+        except ImportError:
+            self.skipTest("rapidocr_onnxruntime not installed (local OCR disabled)")
+        old_ocr = os.environ.get("ENABLE_LOCAL_OCR")
+        try:
+            os.environ["ENABLE_LOCAL_OCR"] = "true"
+            text, method, conf, meta = read_document("backend/data/sample_invoices/06_scanned_muller_no_po_eur.png")
+            self.assertEqual(method, "ocr")
+            self.assertGreater(len(text), 100)
+            self.assertGreaterEqual(conf, 0.70)
+            self.assertIn("RE-2026-0412", text)
+            self.assertIn("DE123456789", text)
+        finally:
+            if old_ocr is not None:
+                os.environ["ENABLE_LOCAL_OCR"] = old_ocr
+            else:
+                os.environ.pop("ENABLE_LOCAL_OCR", None)
 
     # -----------------------------------------------------------------------
     # 4. Sample Invoices End-to-End Pipeline
@@ -256,11 +269,38 @@ class TestAPBackend(unittest.TestCase):
         self.assertIn("DUPLICATE_INVOICE", r5.reason_codes)
 
     def test_sample_06_scanned_muller_inferred_po(self):
-        r = process_invoice_file("backend/data/sample_invoices/06_scanned_muller_no_po_eur.png")
-        self.assertEqual(r.decision, "NEEDS_REVIEW")
-        self.assertIn("PO_INFERRED", r.reason_codes)
-        self.assertEqual(r.matched_po_number, "PO-2026-1045")
-        self.assertEqual(r.read_method, "ocr")
+        try:
+            import rapidocr_onnxruntime
+        except ImportError:
+            self.skipTest("rapidocr_onnxruntime not installed (local OCR disabled)")
+        old_ocr = os.environ.get("ENABLE_LOCAL_OCR")
+        try:
+            os.environ["ENABLE_LOCAL_OCR"] = "true"
+            r = process_invoice_file("backend/data/sample_invoices/06_scanned_muller_no_po_eur.png")
+            self.assertEqual(r.decision, "NEEDS_REVIEW")
+            self.assertIn("PO_INFERRED", r.reason_codes)
+            self.assertEqual(r.matched_po_number, "PO-2026-1045")
+            self.assertEqual(r.read_method, "ocr")
+        finally:
+            if old_ocr is not None:
+                os.environ["ENABLE_LOCAL_OCR"] = old_ocr
+            else:
+                os.environ.pop("ENABLE_LOCAL_OCR", None)
+
+    def test_sample_06_default_disabled_ocr_routes_to_needs_review(self):
+        """When local OCR is disabled (production default), scanned docs route cleanly to NEEDS_REVIEW."""
+        old_ocr = os.environ.get("ENABLE_LOCAL_OCR")
+        try:
+            os.environ["ENABLE_LOCAL_OCR"] = "false"
+            r = process_invoice_file("backend/data/sample_invoices/06_scanned_muller_no_po_eur.png")
+            self.assertEqual(r.decision, "NEEDS_REVIEW")
+            self.assertIn("SCANNED_DOCUMENT", r.reason_codes)
+            self.assertIn("could not be read automatically", r.decision_summary)
+        finally:
+            if old_ocr is not None:
+                os.environ["ENABLE_LOCAL_OCR"] = old_ocr
+            else:
+                os.environ.pop("ENABLE_LOCAL_OCR", None)
 
     def test_sample_07_fraud_bank_changed(self):
         r = process_invoice_file("backend/data/sample_invoices/07_fraud_bank_changed_brightline_usd.pdf")
@@ -356,6 +396,31 @@ class TestAPBackend(unittest.TestCase):
 
         # Restore V001
         update_vendor_record("V001", {"status": "ACTIVE"})
+
+    def test_override_rejection_refunds_po_ledger(self):
+        """When an approved invoice is overridden to REJECT, PO ledger is refunded and reopened."""
+        r = process_invoice_file("backend/data/sample_invoices/01_happy_shree_ganesh_inr.pdf")
+        self.assertEqual(r.decision, "AUTO_APPROVE")
+        self.assertEqual(r.matched_po_number, "PO-2026-1041")
+
+        pos = load_purchase_orders()
+        po_1041 = next(p for p in pos if p["po_number"] == "PO-2026-1041")
+        self.assertEqual(po_1041["status"], "CLOSED")
+        self.assertLessEqual(po_1041["remaining_amount"], 0.01)
+
+        overridden = override_run_decision(
+            run_id=r.run_id,
+            new_decision="REJECT",
+            comment="Audit caught fraud",
+            reviewer="Auditor Lead",
+        )
+        self.assertIsNotNone(overridden)
+        self.assertEqual(overridden.decision, "REJECT")
+
+        pos_after = load_purchase_orders()
+        po_1041_after = next(p for p in pos_after if p["po_number"] == "PO-2026-1041")
+        self.assertEqual(po_1041_after["status"], "OPEN")
+        self.assertGreater(po_1041_after["remaining_amount"], 200000.0)
 
 
 if __name__ == "__main__":

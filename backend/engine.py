@@ -238,6 +238,7 @@ def load_fx_rates() -> Dict[str, float]:
 def update_po_ledger(po_number: str, invoice_amount: float) -> bool:
     """
     Deducts invoice amount from remaining_amount and adds to invoiced_amount in purchase_orders.csv.
+    Accepts negative invoice_amount for refunding/reopening previously approved invoices.
     """
     if not PURCHASE_ORDERS_CSV.exists():
         return False
@@ -246,11 +247,14 @@ def update_po_ledger(po_number: str, invoice_amount: float) -> bool:
     updated = False
     for po in pos:
         if po["po_number"] == po_number:
-            new_invoiced = round(po["invoiced_amount"] + invoice_amount, 2)
-            new_remaining = round(max(0.0, po["remaining_amount"] - invoice_amount), 2)
+            new_invoiced = round(max(0.0, po["invoiced_amount"] + invoice_amount), 2)
+            total_amt = float(po.get("total_amount") or 0.0)
+            new_remaining = round(max(0.0, min(total_amt, po["remaining_amount"] - invoice_amount)), 2)
             po["invoiced_amount"] = new_invoiced
             po["remaining_amount"] = new_remaining
-            if new_remaining <= 0.01:
+            if new_remaining > 0.01:
+                po["status"] = "OPEN"
+            else:
                 po["status"] = "CLOSED"
             updated = True
             break
@@ -2127,9 +2131,13 @@ def process_invoice_file(
                 s6_details.append(f"Minor variance (+{overbilled_amount:,.2f} / +{(overbilled_amount/po_total)*100:.2f}%) is within approved AP tolerance threshold (<= {total_tol_pct}%).")
             elif remaining_before <= 0.01 or (overbilled_amount / po_total) > 0.10:
                 consumption_status = "OVERBILLED"
-                reason_codes.append("PO_OVERBILLED")
-                s6_status = "FAIL"
-                s6_details.append(f"CRITICAL: PO OVERBILLED! Invoice ({this_invoice:,.2f}) exceeds remaining PO balance ({remaining_before:,.2f}) by {overbilled_amount:,.2f} (> 10% or exhausted PO)!")
+                if not is_draft_or_invalid:
+                    reason_codes.append("PO_OVERBILLED")
+                    s6_status = "FAIL"
+                    s6_details.append(f"CRITICAL: PO OVERBILLED! Invoice ({this_invoice:,.2f}) exceeds remaining PO balance ({remaining_before:,.2f}) by {overbilled_amount:,.2f} (> 10% or exhausted PO)!")
+                else:
+                    s6_status = "WARN"
+                    s6_details.append(f"Draft/invalid document held for review; remaining balance ({remaining_before:,.2f}) exceeded.")
             else:
                 consumption_status = "OVERBILLED"
                 s6_status = "WARN"
@@ -2141,9 +2149,13 @@ def process_invoice_file(
         elif remaining_before <= 0.01:
             consumption_status = "PO_CLOSED"
             overbilled_amount = this_invoice
-            reason_codes.append("PO_OVERBILLED")
-            s6_status = "FAIL"
-            s6_details.append("CRITICAL: PO has zero remaining balance.")
+            if not is_draft_or_invalid:
+                reason_codes.append("PO_OVERBILLED")
+                s6_status = "FAIL"
+                s6_details.append("CRITICAL: PO has zero remaining balance.")
+            else:
+                s6_status = "WARN"
+                s6_details.append("PO is closed; draft/invalid document held for review.")
         else:
             consumption_status = "WITHIN_LIMIT"
             overbilled_amount = 0.0
@@ -2298,8 +2310,15 @@ def process_invoice_file(
     recommended_action = ""
     draft_email = None
 
+    # Priority 0: Scanned document requiring manual review (e.g. OCR disabled or unreadable)
+    if doc_meta.get("review_required") or doc_meta.get("ocr_skipped"):
+        det_decision = "NEEDS_REVIEW"
+        decision_title = "Review Required: Scanned Physical Document"
+        decision_summary = doc_meta.get("message") or "Scanned document could not be read automatically — please review manually"
+        recommended_action = "Inspect visual document preview and enter invoice details manually."
+
     # Priority 1: REJECT
-    if "BANK_DETAILS_CHANGED" in reason_codes:
+    elif "BANK_DETAILS_CHANGED" in reason_codes:
         det_decision = "REJECT"
         decision_title = "Critical Security Alert: Vendor Bank Details Changed"
         decision_summary = (
@@ -2597,7 +2616,10 @@ def process_invoice_file(
         expected_quotation=expected_quotation,
     )
 
-    ai_sum = ai_review_res.get("summary") or decision_summary
+    if doc_meta.get("review_required") or doc_meta.get("ocr_skipped"):
+        ai_sum = doc_meta.get("message") or decision_summary
+    else:
+        ai_sum = ai_review_res.get("summary") or decision_summary
     ai_flws = ai_review_res.get("concerns", [])
     std_inv.ai_summary = ai_sum
     std_inv.ai_flaws = ai_flws
@@ -2763,14 +2785,16 @@ def override_run_decision(
 
     if new_decision in ["AUTO_APPROVE", "APPROVED"]:
         run.human_approval_status = "APPROVED_BY_HUMAN"
-        if old_decision != "AUTO_APPROVE" and run.matched_po_number and run.invoice_total:
+        if old_decision not in ["AUTO_APPROVE", "APPROVED"] and run.matched_po_number and run.invoice_total:
             update_po_ledger(run.matched_po_number, run.invoice_total)
         run.decision_title = f"Manually Approved by {reviewer}"
         run.decision_summary = f"Reviewer Override: {comment}"
         run.recommended_action = "Disbursement authorized by human reviewer."
-    elif new_decision == "REJECT":
-        run.human_approval_status = "REJECTED_BY_HUMAN"
-        run.decision_title = f"Manually Rejected by {reviewer}"
+    elif new_decision in ["REJECT", "ON_HOLD"]:
+        run.human_approval_status = "REJECTED_BY_HUMAN" if new_decision == "REJECT" else "ON_HOLD"
+        run.decision_title = f"Manually Rejected by {reviewer}" if new_decision == "REJECT" else f"Placed On Hold by {reviewer}"
+        if old_decision in ["AUTO_APPROVE", "APPROVED"] and run.matched_po_number and run.invoice_total:
+            update_po_ledger(run.matched_po_number, -run.invoice_total)
 
     save_run(run)
     return run

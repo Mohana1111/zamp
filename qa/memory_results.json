@@ -1,0 +1,11 @@
+{
+  "baseline_mb": 177.69,
+  "png_file_mb": 3.11,
+  "peak_png_mb": 572.9,
+  "pdf_file_mb": 4.52,
+  "peak_pdf_mb": 181.05,
+  "overall_peak_mb": 572.9,
+  "render_limit_mb": 512.0,
+  "utilization_pct": 111.9,
+  "headroom_mb": -60.9
+}
