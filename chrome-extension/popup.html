@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ClearPay AP Bridge</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #111111;
+      color: #FFFFFF;
+      box-sizing: border-box;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+      border-bottom: 1px solid #262626;
+      padding-bottom: 10px;
+    }
+    .logo-badge {
+      width: 28px;
+      height: 28px;
+      background: linear-gradient(135deg, #10B981, #059669);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 14px;
+      color: white;
+    }
+    .title {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .subtitle {
+      font-size: 10px;
+      color: #10B981;
+      font-family: monospace;
+      text-transform: uppercase;
+    }
+    .status-card {
+      background-color: #1A1A1A;
+      border: 1px solid #2E2E2E;
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 14px;
+    }
+    .status-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+    .status-row:last-child {
+      margin-bottom: 0;
+    }
+    .status-label {
+      color: #9CA3AF;
+      font-size: 10px;
+      text-transform: uppercase;
+      font-family: monospace;
+    }
+    .status-val {
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .dot-green {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: #10B981;
+    }
+    .dot-red {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: #EF4444;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 9px 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      box-sizing: border-box;
+      transition: all 0.15s ease;
+      margin-bottom: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #10B981, #059669);
+      color: white;
+    }
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #059669, #047857);
+    }
+    .btn-secondary {
+      background-color: #262626;
+      color: #E5E7EB;
+      border: 1px solid #383838;
+    }
+    .btn-secondary:hover {
+      background-color: #333333;
+    }
+    .footer-note {
+      font-size: 10px;
+      color: #6B7280;
+      line-height: 1.4;
+      text-align: center;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-badge">CP</div>
+    <div>
+      <div class="title">ClearPay AP Bridge</div>
+      <div class="subtitle">v2.4.0 • Autonomous AP</div>
+    </div>
+  </div>
+
+  <div class="status-card">
+    <div class="status-row">
+      <span class="status-label">Backend API</span>
+      <span class="status-val" id="api-status">
+        <span class="dot-green"></span> Checking...
+      </span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Gmail Integration</span>
+      <span class="status-val" id="gmail-status">Active</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Dashboard</span>
+      <span class="status-val" style="color: #34D399;">localhost:5173</span>
+    </div>
+  </div>
+
+  <button class="btn btn-primary" id="open-dashboard">
+    Open ClearPay Dashboard &rarr;
+  </button>
+
+  <button class="btn btn-secondary" id="push-active-tab">
+    Send Open Gmail to Dashboard ⚡
+  </button>
+
+  <div class="footer-note">
+    In <strong>mail.google.com</strong>, click the <em>"Send to ClearPay Dashboard"</em> button on any email thread to run autonomous quotation &amp; duplicate verification.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

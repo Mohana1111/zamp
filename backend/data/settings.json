@@ -1,0 +1,9 @@
+{
+  "default_price_tolerance_pct": 2.0,
+  "default_total_tolerance_pct": 1.0,
+  "default_auto_approve_limit_inr": null,
+  "duplicate_window_days": 365,
+  "require_po_above_inr": 50000.0,
+  "ai_review_enabled": true,
+  "ai_min_confidence": 0.85
+}

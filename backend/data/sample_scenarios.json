@@ -1,0 +1,112 @@
+[
+  {
+    "id": "scenario_01",
+    "filename": "01_happy_shree_ganesh_inr.pdf",
+    "title": "Clean Standard GST Invoice",
+    "subtitle": "Shree Ganesh Packaging • PO-2026-1041",
+    "category": "HAPPY_PATH",
+    "badge_color": "emerald",
+    "expected_decision": "AUTO_APPROVE",
+    "description": "Clean Indian GST Tax Invoice with exact 3-way match on PO-2026-1041, line items, 18% IGST calculation (₹2,36,000.00), and active vendor master bank account."
+  },
+  {
+    "id": "scenario_02",
+    "filename": "02_split_part1_apex_inr.pdf",
+    "title": "Split PO - Part 1 (Partial Delivery)",
+    "subtitle": "Apex Industrial Components • PO-2026-1042 (6/10 Units)",
+    "category": "HAPPY_PATH",
+    "badge_color": "emerald",
+    "expected_decision": "AUTO_APPROVE",
+    "description": "Partial billing milestone batch 1 (6 units @ ₹10,000 = ₹60,000) against PO ₹1,00,000. Consumes 60% of PO, leaving ₹40,000 remaining."
+  },
+  {
+    "id": "scenario_03",
+    "filename": "03_split_part2_apex_inr.pdf",
+    "title": "Split PO - Part 2 (Final Delivery)",
+    "subtitle": "Apex Industrial Components • PO-2026-1042 (4/10 Units)",
+    "category": "HAPPY_PATH",
+    "badge_color": "emerald",
+    "expected_decision": "AUTO_APPROVE",
+    "description": "Partial billing milestone batch 2 (4 units @ ₹10,000 = ₹40,000) against PO ₹1,00,000. Exactly consumes remaining PO balance to ₹0."
+  },
+  {
+    "id": "scenario_04",
+    "filename": "04_split_part3_overbill_apex_inr.pdf",
+    "title": "Split PO - Part 3 (Overbilling Attempt)",
+    "subtitle": "Apex Industrial Components • PO-2026-1042 Overbill",
+    "category": "EDGE_CASE",
+    "badge_color": "rose",
+    "expected_decision": "REJECT",
+    "description": "Supplemental invoice for ₹15,000 (1.5 units) submitted after PO-2026-1042 is already 100% consumed. Flags PO_OVERBILLED rejection."
+  },
+  {
+    "id": "scenario_05",
+    "filename": "05_duplicate_rescan_shree_ganesh.pdf",
+    "title": "Disguised Duplicate Scan",
+    "subtitle": "Shree Ganesh Packaging • INV/2026/0081",
+    "category": "EDGE_CASE",
+    "badge_color": "rose",
+    "expected_decision": "REJECT",
+    "description": "Resent scanned copy of #1 formatted with slashes ('INV/2026/0081' vs 'INV-2026-0081') and date format variance ('28/10/2026'). Flags DUPLICATE_INVOICE."
+  },
+  {
+    "id": "scenario_06",
+    "filename": "06_scanned_muller_no_po_eur.png",
+    "title": "German Scanned PNG (No PO Ref)",
+    "subtitle": "Müller Industrietechnik GmbH • RE-2026-0412",
+    "category": "MULTI_FORMAT",
+    "badge_color": "amber",
+    "expected_decision": "NEEDS_REVIEW",
+    "description": "Scanned German document with German text, European comma decimals ('5.900,00 €'), and no PO reference on invoice. Pipeline infers PO-2026-1045 via line-item matching."
+  },
+  {
+    "id": "scenario_07",
+    "filename": "07_fraud_bank_changed_brightline_usd.pdf",
+    "title": "BEC Fraud - Altered Bank Details",
+    "subtitle": "Brightline Software Inc • PO-2026-1043",
+    "category": "EDGE_CASE",
+    "badge_color": "rose",
+    "expected_decision": "REJECT",
+    "description": "US SaaS invoice matches amount ($12,000) and PO, but invoice specifies an unapproved offshore bank account (999888777666 vs 000123456789). High-severity fraud alert."
+  },
+  {
+    "id": "scenario_08",
+    "filename": "08_currency_mismatch_muller_usd.pdf",
+    "title": "Currency Mismatch (USD vs EUR)",
+    "subtitle": "Müller Industrietechnik GmbH • RE-2026-0499",
+    "category": "EDGE_CASE",
+    "badge_color": "amber",
+    "expected_decision": "NEEDS_REVIEW",
+    "description": "Invoice references EUR PO-2026-1045 (€7,021.00) but is billed in US Dollars ($7,650.00). System normalizes currency, computes FX equivalent, and flags for review."
+  },
+  {
+    "id": "scenario_09",
+    "filename": "09_price_variance_lioncity_sgd.xlsx",
+    "title": "Excel Spreadsheet + Price Variance",
+    "subtitle": "Lion City Logistics Pte Ltd • LCL-SG-882",
+    "category": "MULTI_FORMAT",
+    "badge_color": "amber",
+    "expected_decision": "NEEDS_REVIEW",
+    "description": "Native XLSX invoice with ambiguous '$' currency symbol (inferred as SGD from vendor) and a +30% price variance on line 2 (Terminal Handling Charges $1,950 vs $1,500)."
+  },
+  {
+    "id": "scenario_10",
+    "filename": "10_missing_fields_draft.docx",
+    "title": "Word Docx Draft + Math Mismatch",
+    "subtitle": "Shree Ganesh Packaging • Draft Docx",
+    "category": "MULTI_FORMAT",
+    "badge_color": "amber",
+    "expected_decision": "ON_HOLD",
+    "description": "Draft DOCX invoice missing invoice number ('[TBD / Blank]') with arithmetic error (Subtotal ₹50,000 + IGST ₹9,000 = ₹64,000 instead of ₹59,000)."
+  },
+  {
+    "id": "scenario_11",
+    "filename": "11_bundled_embedded_tax_tolerance_inr.pdf",
+    "title": "Bundled Lines + Embedded Tax + Tolerance",
+    "subtitle": "Shree Ganesh Packaging • PO-2026-1041 (+₹450)",
+    "category": "HAPPY_PATH",
+    "badge_color": "emerald",
+    "expected_decision": "AUTO_APPROVE",
+    "description": "Single bundled line item 'Complete Packaging Supply (Cartons & Strapping)' with embedded 18% GST and a ₹450 freight/rounding variance (Total ₹2,36,450 vs PO ₹2,36,000 -> +0.19% within 1% tolerance)."
+  }
+]

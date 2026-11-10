@@ -1,0 +1,6 @@
+vendor_id,legal_name,aliases,country,tax_id,default_currency,bank_account,bank_code,status,payment_terms
+V001,Shree Ganesh Packaging Pvt Ltd,Shree Ganesh Packaging|SG Packaging,IN,27AABCS1234F1Z5,INR,50200012345678,HDFC0001234,ACTIVE,NET30
+V002,Brightline Software Inc,Brightline|Brightline Software|Brightline Cloud,US,12-3456789,USD,000123456789,021000021,ACTIVE,NET45
+V003,Müller Industrietechnik GmbH,Muller Industrietechnik|Müller GmbH|Muller GmbH,DE,DE123456789,EUR,DE89370400440532013000,DEUTDEFF,ACTIVE,NET30
+V004,Lion City Logistics Pte Ltd,Lion City Logistics|LionCity Logistics,SG,201912345K,SGD,0123456789,DBSSSGSG,ACTIVE,NET30
+V005,Apex Industrial Components Pvt Ltd,Apex Industrial|Apex Components,IN,27AAECA9876B1Z2,INR,91827364501234,ICIC0000451,ACTIVE,NET30

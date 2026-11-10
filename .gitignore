@@ -1,0 +1,10 @@
+.env
+__pycache__/
+node_modules/
+.venv/
+backend/data/uploads/
+backend/data/downloads/
+backend/data/sessions.json
+
+frontend/dist/
+*.pdf.tmp

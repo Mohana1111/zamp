@@ -1,0 +1,9 @@
+po_number,line_no,item_code,description,qty,unit_price,amount,tax_rate
+PO-2026-1041,1,PKG-BOX-L,Corrugated Export Cartons (Double Wall),2000,75.00,150000.00,0.18
+PO-2026-1041,2,PKG-TAPE-HD,Heavy Duty Strapping Rolls,500,100.00,50000.00,0.18
+PO-2026-1042,1,CNC-SPINDLE,High-Torque CNC Spindle Assembly,10,10000.00,100000.00,0.00
+PO-2026-1043,1,SAAS-ENT,Brightline Enterprise Cloud License (Annual),1,12000.00,12000.00,0.00
+PO-2026-1045,1,HP-200,Hydraulic Pump HP-200,4,1250.00,5000.00,0.19
+PO-2026-1045,2,SK-10,Precision Seal Kit SK-10,20,45.00,900.00,0.19
+PO-2026-1047,1,FRT-SEA-20,20ft Container Sea Freight (SG to JNPT),2,3500.00,7000.00,0.00
+PO-2026-1047,2,PORT-THC,Terminal Handling & Documentation Charges,1,1500.00,1500.00,0.00

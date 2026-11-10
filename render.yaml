@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: zamp-ap-automation
+    env: docker
+    plan: free
+    dockerfilePath: Dockerfile
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB
+        value: zamp_ap
+
+
+      - key: AGENT_BOT_EMAIL
+        value: zamp.ap.agent@gmail.com
+      - key: AGENT_BOT_APP_PASSWORD
+        sync: false
+      - key: PORT
+        value: 10000
+

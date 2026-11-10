@@ -1,0 +1,11 @@
+[
+  {
+    "id": "usr_admin_1",
+    "username": "admin_1",
+    "password_hash": "e7b77cf492b67a18526d1ae3b9bd8256cc9bb1529684a06afa16f775778bb3ae",
+    "name": "Administrator",
+    "role": "admin",
+    "email": "admin@clearpay.internal",
+    "created_at": "2026-11-09T00:00:00Z"
+  }
+]

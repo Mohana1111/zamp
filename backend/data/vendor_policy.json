@@ -1,0 +1,42 @@
+{
+  "V001": {
+    "trust": "STANDARD",
+    "auto_approve_limit": null,
+    "price_tolerance_pct": null,
+    "total_tolerance_pct": null,
+    "allow_without_po": false,
+    "notes": "Packaging supplier. Strict 2-way match against open purchase orders."
+  },
+  "V002": {
+    "trust": "STANDARD",
+    "auto_approve_limit": null,
+    "price_tolerance_pct": null,
+    "total_tolerance_pct": null,
+    "allow_without_po": false,
+    "notes": "Enterprise Cloud Software license vendor."
+  },
+  "V003": {
+    "trust": "STANDARD",
+    "auto_approve_limit": null,
+    "price_tolerance_pct": null,
+    "total_tolerance_pct": null,
+    "allow_without_po": false,
+    "notes": "German machinery parts supplier. Subject to European VAT rules."
+  },
+  "V004": {
+    "trust": "STANDARD",
+    "auto_approve_limit": null,
+    "price_tolerance_pct": null,
+    "total_tolerance_pct": null,
+    "allow_without_po": false,
+    "notes": "Singapore sea freight carrier."
+  },
+  "V005": {
+    "trust": "STANDARD",
+    "auto_approve_limit": null,
+    "price_tolerance_pct": null,
+    "total_tolerance_pct": null,
+    "allow_without_po": false,
+    "notes": "Precision CNC assemblies vendor. Regular split shipments."
+  }
+}
