@@ -8,3 +8,6 @@ backend/data/sessions.json
 
 frontend/dist/
 *.pdf.tmp
+backend/data/agent_email_config.json
+backend/data/processed_imap_ids.json
+backend/data/sessions.json
